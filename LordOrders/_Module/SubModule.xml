@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Module>
+  <Name value="Lord Orders" />
+  <Id value="LordOrders" />
+  <Version value="v1.0.0" />
+  <SingleplayerModule value="true" />
+  <MultiplayerModule value="false" />
+  <DependedModules>
+    <DependedModule Id="Native" DependentVersion="v1.4.8" Optional="false" />
+    <DependedModule Id="SandBoxCore" DependentVersion="v1.4.8" Optional="false" />
+    <DependedModule Id="Sandbox" DependentVersion="v1.4.8" Optional="false" />
+  </DependedModules>
+  <SubModules>
+    <SubModule>
+      <Name value="LordOrders" />
+      <DLLName value="LordOrders.dll" />
+      <SubModuleClassType value="LordOrders.SubModule" />
+      <Tags />
+    </SubModule>
+  </SubModules>
+</Module>
