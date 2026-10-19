@@ -41,8 +41,8 @@ namespace GarrisonDefense
 
         public void Sync(IDataStore dataStore)
         {
-            // Ayarların olmadığı eski (v1.0) kayıtlarda tüm ayarlar varsayılan kalır.
-            int version = Version;
+            // Ayarların olmadığı eski (v1.0) kayıtlarda anahtar yoktur, version 0 kalır ve varsayılanlar kullanılır.
+            int version = dataStore.IsSaving ? Version : 0;
             dataStore.SyncData("gd_set_version", ref version);
             if (dataStore.IsLoading && version != Version)
                 return;

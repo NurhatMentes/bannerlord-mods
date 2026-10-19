@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Actions;
@@ -42,8 +43,8 @@ namespace GarrisonDefense
 
         private List<MobileParty> _detachments = new List<MobileParty>();
 
-        // Kaydedilmez; yüklemeden sonra her saat başı yeniden hesaplanır.
-        // (Yükleme sırasında yoldaki yardım kuvvetleri evlerine döner.)
+        // Kovalama durumu kaydedilmez, yüklemeden sonra her saat başı yeniden hesaplanır.
+        // Kuşatma yardımı durumu (_reliefTarget, _departAt, _reliefStart) kaydedilir.
         private readonly Dictionary<MobileParty, MobileParty> _targets = new Dictionary<MobileParty, MobileParty>();
         private readonly Dictionary<MobileParty, CampaignTime> _chaseStart = new Dictionary<MobileParty, CampaignTime>();
         private readonly HashSet<MobileParty> _returning = new HashSet<MobileParty>();
@@ -64,12 +65,52 @@ namespace GarrisonDefense
             dataStore.SyncData("garrisonDefense_detachments", ref _detachments);
             if (_detachments == null)
                 _detachments = new List<MobileParty>();
+            SyncRelief(dataStore);
             GDSettings.Current.Sync(dataStore);
+        }
+
+        // Yardım durumu: partiler liste olarak, hedef ve zamanlar "settlementId|saat" metni olarak saklanır.
+        private void SyncRelief(IDataStore dataStore)
+        {
+            List<MobileParty> parties = _reliefTarget.Keys.ToList();
+            string data = string.Join(";", parties.Select(p => _reliefTarget[p].StringId + "|"
+                + (_departAt.TryGetValue(p, out CampaignTime t) ? t.ToHours : 0d).ToString("R", CultureInfo.InvariantCulture)));
+            string starts = string.Join(";", _reliefStart.Select(kv => kv.Key.StringId + "|"
+                + kv.Value.ToHours.ToString("R", CultureInfo.InvariantCulture)));
+            dataStore.SyncData("garrisonDefense_reliefParties", ref parties);
+            dataStore.SyncData("garrisonDefense_reliefData", ref data);
+            dataStore.SyncData("garrisonDefense_reliefStarts", ref starts);
+            if (!dataStore.IsLoading)
+                return;
+
+            _reliefTarget.Clear();
+            _departAt.Clear();
+            _reliefStart.Clear();
+            string[] rows = (data ?? "").Split(new[] { ';' }, System.StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; parties != null && i < parties.Count && i < rows.Length; i++)
+            {
+                string[] f = rows[i].Split('|');
+                Settlement target = f.Length == 2 ? Settlement.Find(f[0]) : null;
+                if (parties[i] == null || target == null)
+                    continue;
+                _reliefTarget[parties[i]] = target;
+                if (double.TryParse(f[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double h))
+                    _departAt[parties[i]] = CampaignTime.Hours((float)h);
+            }
+            foreach (string row in (starts ?? "").Split(new[] { ';' }, System.StringSplitOptions.RemoveEmptyEntries))
+            {
+                string[] f = row.Split('|');
+                Settlement s = f.Length == 2 ? Settlement.Find(f[0]) : null;
+                if (s != null && double.TryParse(f[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double h))
+                    _reliefStart[s] = CampaignTime.Hours((float)h);
+            }
         }
 
         private void OnSessionLaunched(CampaignGameStarter starter)
         {
             GDSettingsUI.RegisterMenus(starter);
+            foreach (MobileParty d in _detachments)
+                _everSpawned.Add(d);
         }
 
         private void OnPartyDestroyed(MobileParty party, PartyBase destroyer)
@@ -95,8 +136,7 @@ namespace GarrisonDefense
 
             List<MobileParty> hostiles = CollectPotentialHostiles();
 
-            if (S.SiegeRelief)
-                UpdateReliefOperations(hostiles);
+            UpdateReliefOperations(hostiles);   // ayar kapalıyken de süren operasyonlar temizlenir
 
             foreach (MobileParty detachment in _detachments.ToList())
                 UpdateDetachment(detachment, hostiles);
@@ -125,7 +165,8 @@ namespace GarrisonDefense
             {
                 if (!p.IsActive || p.CurrentSettlement != null || p.IsCurrentlyAtSea || p.MapFaction == null)
                     continue;
-                if (!(p.IsLordParty || p.IsBandit || p.IsPatrolParty))
+                // Modun müfrezeleri hedef olmaz ama düşman güç hesabına girer.
+                if (!(p.IsLordParty || p.IsBandit || p.IsPatrolParty || Instance?.IsDetachment(p) == true))
                     continue;
                 if (p.MemberRoster.TotalHealthyCount <= 0)
                     continue;
@@ -170,6 +211,9 @@ namespace GarrisonDefense
         private static bool IsValidThreat(MobileParty p, Settlement home)
         {
             if (!IsHostileTo(p, home) || p.BesiegedSettlement != null || p.Army != null)
+                return false;
+            // Diğer müfrezeler ve oyuncunun kendi partisi hedef alınmaz (AI garnizonları oyuncuyu kovalamaz).
+            if (p.IsMainParty || p.PartyComponent is CustomPartyComponent)
                 return false;
             return p.IsBandit ? S.TargetBandits : S.TargetLords;
         }
@@ -408,6 +452,8 @@ namespace GarrisonDefense
                 }
             }
 
+            if (!S.SiegeRelief)
+                return;
             foreach (Settlement besieged in Settlement.All)
             {
                 if (!besieged.IsFortification || !besieged.IsUnderSiege || !IsDefendedSettlement(besieged)
@@ -444,8 +490,9 @@ namespace GarrisonDefense
                 int budget = Budget(g);
                 if (budget < MinDetachmentSize)
                     continue;
+                // Küçük bir tamamlama bile en az MinDetachmentSize askerle gönderilir.
                 TroopRoster roster = PickTroops(g.Town.GarrisonParty.MemberRoster, budget,
-                    neededCount - count, neededPower - power, false, true);
+                    MathF.Max(MinDetachmentSize, neededCount - count), MathF.Max(0f, neededPower - power), false, true);
                 if (roster.TotalManCount < MinDetachmentSize)
                     continue;
                 plan.Add((g, roster));
@@ -582,7 +629,9 @@ namespace GarrisonDefense
         {
             int ownCount = detachment.MemberRoster.TotalHealthyCount;
             float ownPower = RosterPower(detachment.MemberRoster);
+            float reach = S.ThreatRadius + 25f;
             foreach (MobileParty p in hostiles
+                         .Where(p => p.Position.Distance(home.Position) <= reach)
                          .Where(p => IsValidThreat(p, home) && !IsTargeted(p))
                          .Where(p => DistanceToZone(home, p) <= S.ThreatRadius)
                          .OrderBy(p => p.Position.Distance(detachment.Position)))

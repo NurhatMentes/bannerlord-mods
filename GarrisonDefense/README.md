@@ -11,6 +11,7 @@ Ek mod gerektirmez.
 - **Kuşatmaya yardım:** Kalen kuşatılınca yakındaki garnizonlar ortak bir yardım kuvveti toplar. Herkes aynı anda varsın diye
   yakındakiler biraz bekler. Güç yetmiyorsa yardım çıkmaz ve sana haber verilir.
 - **Yapay zekâ lordları:** Ayarlardan açılırsa AI klanlarının kaleleri de aynı şekilde korunur (varsayılan: kapalı).
+  AI garnizonları senin ana partini hedef almaz; müfrezeler birbirini hedef almaz ama güç hesabında sayılır.
 - **Rapor:** 30 günlük dönem, önceki dönem ve toplam: müfrezeler, zaferler, dağıtılan haydutlar, esirler, kayıplar.
 
 ## Kullanım

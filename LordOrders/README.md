@@ -24,5 +24,12 @@ Lordlarına emir ver: köy yağmala, kale kuşat, erzak getir, bölgeyi koru, or
 
 Süre dolunca ya da iş bitince lord kendi işine döner ve sana mesaj gelir.
 
+- Reddeden bir vasala 24 saat boyunca aynı şekilde tekrar soramazsın.
+- Kuşatma başladıktan sonra kuşatmayı (saldırı, erzak bitince çekilme) oyunun yapay zekâsı yönetir.
+- Erzak: sadece satın alınan yiyecek teslim edilir; kiler doluysa kalan lordda kalır.
+
+**Modu kaldırmadan önce** şehir/kale menüsünden "Tüm lord emirlerini iptal et" seçeneğini kullan;
+yoksa emir almış partiler kayıtta kilitli kalabilir.
+
 ## Kurulum
 `dist/Modules/LordOrders` klasörünü oyunun `Modules` klasörüne kopyala, launcher'da işaretle.
