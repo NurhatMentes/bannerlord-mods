@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Module>
+  <Name value="Garrison Defense" />
+  <Id value="GarrisonDefense" />
+  <Version value="v1.0.0" />
+  <SingleplayerModule value="true" />
+  <MultiplayerModule value="false" />
+  <DependedModules>
+    <DependedModule Id="Native" DependentVersion="v1.4.8" Optional="false" />
+    <DependedModule Id="SandBoxCore" DependentVersion="v1.4.8" Optional="false" />
+    <DependedModule Id="Sandbox" DependentVersion="v1.4.8" Optional="false" />
+  </DependedModules>
+  <SubModules>
+    <SubModule>
+      <Name value="GarrisonDefense" />
+      <DLLName value="GarrisonDefense.dll" />
+      <SubModuleClassType value="GarrisonDefense.SubModule" />
+      <Tags />
+    </SubModule>
+  </SubModules>
+</Module>
