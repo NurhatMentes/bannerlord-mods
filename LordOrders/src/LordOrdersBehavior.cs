@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Actions;
+using TaleWorlds.CampaignSystem.Encounters;
 using TaleWorlds.CampaignSystem.GameMenus;
 using TaleWorlds.CampaignSystem.GameState;
 using TaleWorlds.CampaignSystem.Party;
@@ -11,6 +12,7 @@ using TaleWorlds.CampaignSystem.Settlements;
 using TaleWorlds.Core;
 using TaleWorlds.Library;
 using TaleWorlds.Localization;
+using TaleWorlds.ObjectSystem;
 
 namespace LordOrders
 {
@@ -24,6 +26,7 @@ namespace LordOrders
         private const float RaidDays = 5f, BesiegeDays = 15f, FoodDays = 10f, PatrolDays = 10f, FollowDays = 10f, JoinDays = 5f;
         private const float PatrolEngageRadius = 8f;
         private const int MaxListItems = 20;
+        private const float RefuseCooldownHours = 24f;  // reddeden vasala bu süre tekrar sorulamaz
 
         public static LordOrdersBehavior Instance { get; private set; }
 
@@ -31,6 +34,7 @@ namespace LordOrders
 
         private List<Order> _orders = new List<Order>();
         private List<Order> _messages = new List<Order>();   // haberciyle yolda olan emirler
+        private readonly Dictionary<Hero, CampaignTime> _refusedUntil = new Dictionary<Hero, CampaignTime>();
 
         // Diyalog bitince açılacak hedef seçimi (bir sonraki karede).
         private Hero _pendingHero;
@@ -44,6 +48,19 @@ namespace LordOrders
         {
             CampaignEvents.OnSessionLaunchedEvent.AddNonSerializedListener(this, OnSessionLaunched);
             CampaignEvents.HourlyTickEvent.AddNonSerializedListener(this, OnHourlyTick);
+            CampaignEvents.HeroKilledEvent.AddNonSerializedListener(this, (victim, killer, detail, notify) =>
+            {
+                foreach (Order o in _orders.Where(o => o.Hero == victim).ToList())
+                    Release(o);
+                _messages.RemoveAll(m => m.Hero == victim);
+            });
+            CampaignEvents.MobilePartyDestroyed.AddNonSerializedListener(this, (party, destroyer) =>
+                _orders.RemoveAll(o => o.Party == party));
+            CampaignEvents.OnPartyDisbandStartedEvent.AddNonSerializedListener(this, party =>
+            {
+                foreach (Order o in _orders.Where(o => o.Party == party).ToList())
+                    Finish(o, $"{o.Hero?.Name} partisini dağıtıyor, emir iptal.", false);
+            });
         }
 
         public override void SyncData(IDataStore dataStore)
@@ -55,8 +72,10 @@ namespace LordOrders
         private static void SyncList(IDataStore dataStore, string key, ref List<Order> list)
         {
             List<Hero> heroes = list.Select(o => o.Hero).ToList();
+            List<MobileParty> parties = list.Select(o => o.Party).ToList();
             string data = string.Join("\n", list.Select(o => o.Serialize()));
             dataStore.SyncData(key + "_heroes", ref heroes);
+            dataStore.SyncData(key + "_parties", ref parties);
             dataStore.SyncData(key + "_data", ref data);
             if (!dataStore.IsLoading)
                 return;
@@ -67,8 +86,11 @@ namespace LordOrders
             for (int i = 0; i < heroes.Count && i < lines.Length; i++)
             {
                 Order o = Order.Deserialize(heroes[i], lines[i]);
-                if (o != null)
-                    list.Add(o);
+                if (o == null)
+                    continue;
+                if (parties != null && parties.Count == heroes.Count)
+                    o.Party = parties[i];
+                list.Add(o);
             }
         }
 
@@ -146,7 +168,13 @@ namespace LordOrders
                 "{=lo_o_never}Boş ver.", null, null, 100, null, null);
 
             starter.AddDialogLine("lo_ack", "lo_ack", "close_window",
-                "{=lo_ack}Hedefi göster, ona göre davranırım.", null, null, 100, null);
+                "{=lo_ack}Hedefi göster, ona göre davranırım.", null,
+                () =>
+                {
+                    // Haritada karşılaşmayla konuşulduysa karşılaşma menüsü kapansın.
+                    if (PlayerEncounter.Current != null)
+                        PlayerEncounter.LeaveEncounter = true;
+                }, 100, null);
             starter.AddDialogLine("lo_cancelled", "lo_cancelled", "lord_pretalk",
                 "{=lo_cancelled}Peki. Kendi bildiğim gibi davranacağım.", null, null, 100, null);
 
@@ -164,7 +192,24 @@ namespace LordOrders
                         return true;
                     },
                     args => OpenMessengerLordPicker(), false, -1);
+                starter.AddGameMenuOption(menu, "lo_cancel_all_" + menu, "{=lo_cancel_all}Tüm lord emirlerini iptal et",
+                    args =>
+                    {
+                        args.optionLeaveType = GameMenuOption.LeaveType.Manage;
+                        args.Tooltip = new TextObject("{=lo_cancel_all_tip}Bütün emirler ve yoldaki haberciler hemen iptal edilir. Modu kaldırmadan önce kullan.");
+                        return _orders.Count > 0 || _messages.Count > 0;
+                    },
+                    args => CancelAll(), false, -1);
             }
+        }
+
+        private void CancelAll()
+        {
+            int n = _orders.Count;
+            foreach (Order o in _orders.ToList())
+                Release(o);
+            _messages.Clear();
+            Say($"{n} emir iptal edildi; lordlar kendi bildikleri gibi davranacak.", Colors.Yellow);
         }
 
         private void AddOrderLine(CampaignGameStarter starter, string id, string text, OrderType type, Func<bool> available)
@@ -187,7 +232,7 @@ namespace LordOrders
             {
                 if (_pendingUi == null || Campaign.Current == null)
                     return;
-                if (!(Game.Current?.GameStateManager?.ActiveState is MapState))
+                if (!(Game.Current?.GameStateManager?.ActiveState is MapState mapState) || mapState.MapConversationActive)
                     return;
                 if (Campaign.Current.ConversationManager != null && Campaign.Current.ConversationManager.IsConversationInProgress)
                     return;
@@ -200,6 +245,7 @@ namespace LordOrders
             catch (Exception)
             {
                 _pendingUi = null;
+                Say("Lord Orders: işlem tamamlanamadı.", Colors.Red);
             }
         }
 
@@ -398,6 +444,11 @@ namespace LordOrders
 
             if (IsVassal(hero))
             {
+                if (_refusedUntil.TryGetValue(hero, out CampaignTime until) && CampaignTime.Now < until)
+                {
+                    Say($"{hero.Name} kısa süre önce emrini reddetti; tekrar sormak için {MathF.Ceiling(until.RemainingHoursFromNow)} saat bekle.", Colors.Red);
+                    return;
+                }
                 if (Clan.PlayerClan.Influence < VassalInfluenceCost)
                 {
                     Say($"{hero.Name} emrine uymadı: bir vasala emir vermek {VassalInfluenceCost:0} nüfuz gerektirir.", Colors.Red);
@@ -406,6 +457,7 @@ namespace LordOrders
                 float chance = MathF.Clamp(0.55f + hero.GetRelationWithPlayer() * 0.006f, 0.15f, 0.95f);
                 if (MBRandom.RandomFloat > chance)
                 {
+                    _refusedUntil[hero] = CampaignTime.HoursFromNow(RefuseCooldownHours);
                     Say($"{hero.Name} emrini reddetti. (Kabul şansı ~%{MathF.Round(chance * 100)}; ilişkiniz arttıkça yükselir.)", Colors.Red);
                     return;
                 }
@@ -415,6 +467,7 @@ namespace LordOrders
             if (current != null)
                 Release(current);
 
+            order.Party = LeadParty(hero);
             order.StartHours = CampaignTime.Now.ToHours;
             order.DeadlineHours = CampaignTime.HoursFromNow(24f * DurationDays(order.Type)).ToHours;
             order.Stage = 0;
@@ -456,8 +509,9 @@ namespace LordOrders
         private void Release(Order order)
         {
             _orders.Remove(order);
-            MobileParty p = order.Hero?.PartyBelongedTo;
-            if (p != null && p.IsActive && p.LeaderHero == order.Hero)
+            // Lider ölmüş ya da değişmiş olsa bile emri alan partinin kilidi açılır.
+            MobileParty p = order.Party ?? order.Hero?.PartyBelongedTo;
+            if (p != null && p.IsActive)
                 p.Ai.SetDoNotMakeNewDecisions(false);
         }
 
@@ -495,7 +549,9 @@ namespace LordOrders
         {
             Hero hero = order.Hero;
             MobileParty party = LeadParty(hero);
-            if (party == null || hero.IsPrisoner || !hero.IsAlive
+            if (order.Party == null)
+                order.Party = party;
+            if (party == null || party != order.Party || party.IsDisbanding || hero.IsPrisoner || !hero.IsAlive
                 || (party.Army != null && party.Army.LeaderParty != party && order.Type != OrderType.JoinArmy))
             {
                 Finish(order, $"{hero?.Name} emrini yerine getiremiyor (partisi yok, esir ya da başka bir orduda).", false);
@@ -514,7 +570,19 @@ namespace LordOrders
             if (party.MapEvent != null)
                 return;
 
-            party.Ai.SetDoNotMakeNewDecisions(true);
+            // Bana gelen emirlerde biri denizde diğeri karadaysa bekle.
+            bool escortsPlayer = order.Type == OrderType.Follow || order.Type == OrderType.JoinArmy
+                                 || (order.Type == OrderType.BringFood && order.ToPlayer && order.Stage == 1);
+            if (escortsPlayer && party.IsCurrentlyAtSea != MobileParty.MainParty.IsCurrentlyAtSea)
+            {
+                party.Ai.SetDoNotMakeNewDecisions(true);
+                party.SetMoveModeHold();
+                return;
+            }
+
+            // Kuşatma başladıktan sonra kuşatmayı (erzak bitince çekilme vb.) oyunun yapay zekâsı yönetir.
+            bool siegeRunning = order.Type == OrderType.Besiege && party.BesiegedSettlement == order.Target;
+            party.Ai.SetDoNotMakeNewDecisions(!siegeRunning);
             switch (order.Type)
             {
                 case OrderType.Raid: ExecuteRaid(order, party); break;
@@ -522,8 +590,14 @@ namespace LordOrders
                 case OrderType.BringFood: ExecuteFood(order, party); break;
                 case OrderType.Patrol: ExecutePatrol(order, party); break;
                 case OrderType.JoinArmy: ExecuteJoin(order, party); break;
-                case OrderType.Follow: party.SetMoveEscortParty(MobileParty.MainParty, MobileParty.NavigationType.Default, false); break;
+                case OrderType.Follow: party.SetMoveEscortParty(MobileParty.MainParty, Nav(party), false); break;
             }
+        }
+
+        private static MobileParty.NavigationType Nav(MobileParty party)
+        {
+            MobileParty.NavigationType nav = party.NavigationCapability;
+            return nav == MobileParty.NavigationType.None ? MobileParty.NavigationType.Default : nav;
         }
 
         private void ExecuteRaid(Order order, MobileParty party)
@@ -544,7 +618,7 @@ namespace LordOrders
                 Finish(order, $"{order.Hero.Name}: {v.Name} artık düşman değil, yağma iptal.", false);
                 return;
             }
-            party.SetMoveRaidSettlement(v, MobileParty.NavigationType.Default, false);
+            party.SetMoveRaidSettlement(v, Nav(party), false);
         }
 
         private void ExecuteBesiege(Order order, MobileParty party)
@@ -568,14 +642,14 @@ namespace LordOrders
             if (party.BesiegedSettlement == s)
             {
                 order.Stage = 1;
-                return;   // kuşatma sürüyor, saldırı kararı oyunun kuşatma mantığında
+                return;   // kuşatma sürüyor; saldırı ve çekilme kararı oyunun kuşatma yapay zekâsında
             }
             if (order.Stage == 1)
             {
                 Finish(order, $"{order.Hero.Name} {s.Name} kuşatmasını sürdüremedi.", false);
                 return;
             }
-            party.SetMoveBesiegeSettlement(s, MobileParty.NavigationType.Default);
+            party.SetMoveBesiegeSettlement(s, Nav(party));
         }
 
         // En yakın, savaşta olunmayan ve pazarında yiyecek olan şehir.
@@ -616,7 +690,7 @@ namespace LordOrders
                 }
                 if (party.CurrentSettlement == market)
                 {
-                    int bought = BuyFood(market, party, order.Amount);
+                    int bought = BuyFood(market, party, order);
                     if (bought <= 0)
                     {
                         Finish(order, $"{order.Hero.Name} {market.Name} pazarından erzak alamadı (altın ya da stok yetersiz).", false);
@@ -628,7 +702,7 @@ namespace LordOrders
                 }
                 else
                 {
-                    party.SetMoveGoToSettlement(market, MobileParty.NavigationType.Default, false);
+                    party.SetMoveGoToSettlement(market, Nav(party), false);
                     return;
                 }
             }
@@ -637,12 +711,12 @@ namespace LordOrders
             {
                 if (party.Position.Distance(MobileParty.MainParty.Position) <= 2f)
                 {
-                    int moved = MoveFood(party.ItemRoster, MobileParty.MainParty.ItemRoster, order.Amount);
+                    int moved = MoveBoughtFood(order, party.ItemRoster, MobileParty.MainParty.ItemRoster, order.Amount);
                     Finish(order, $"{order.Hero.Name} sana {moved} birim erzak teslim etti.", true);
                 }
                 else
                 {
-                    party.SetMoveEscortParty(MobileParty.MainParty, MobileParty.NavigationType.Default, false);
+                    party.SetMoveEscortParty(MobileParty.MainParty, Nav(party), false);
                 }
                 return;
             }
@@ -655,20 +729,21 @@ namespace LordOrders
             }
             if (party.CurrentSettlement == dest)
             {
-                var temp = new ItemRoster();
-                int moved = MoveFood(party.ItemRoster, temp, order.Amount);
-                float room = MathF.Max(0f, dest.Town.FoodStocksUpperLimit() - dest.Town.FoodStocks);
-                dest.Town.FoodStocks += MathF.Min(room, (float)moved);
-                Finish(order, $"{order.Hero.Name}, {dest.Name} kilerine {moved} birim erzak teslim etti.", true);
+                // Kiler kadar teslim edilir; sığmayan erzak lordda kalır (boşa gitmez).
+                int room = MathF.Max(0, MathF.Floor(dest.Town.FoodStocksUpperLimit() - dest.Town.FoodStocks));
+                int moved = MoveBoughtFood(order, party.ItemRoster, null, room);
+                dest.Town.FoodStocks += moved;
+                string extra = moved < order.Amount ? $" Kiler dolu olduğu için kalanı lordda kaldı." : "";
+                Finish(order, $"{order.Hero.Name}, {dest.Name} kilerine {moved} birim erzak teslim etti.{extra}", true);
             }
             else
             {
-                party.SetMoveGoToSettlement(dest, MobileParty.NavigationType.Default, false);
+                party.SetMoveGoToSettlement(dest, Nav(party), false);
             }
         }
 
-        // Pazardan en ucuz yiyecekleri oyuncunun parasıyla alır. Alınan miktarı döndürür.
-        private static int BuyFood(Settlement market, MobileParty party, int amount)
+        // Pazardan en ucuz yiyecekleri oyuncunun parasıyla alır, alınanları emre kaydeder.
+        private static int BuyFood(Settlement market, MobileParty party, Order order)
         {
             ItemRoster roster = market.ItemRoster;
             var food = new List<(ItemObject item, int count, int price)>();
@@ -676,16 +751,17 @@ namespace LordOrders
             {
                 ItemRosterElement e = roster.GetElementCopyAtIndex(i);
                 ItemObject item = e.EquipmentElement.Item;
-                if (item != null && item.IsFood && e.Amount > 0)
+                if (item != null && item.IsFood && e.Amount > 0 && e.EquipmentElement.ItemModifier == null)
                     food.Add((item, e.Amount, market.Town.GetItemPrice(item, party, false)));
             }
 
             int bought = 0;
             int spent = 0;
+            var record = new List<string>();
             foreach (var (item, count, price) in food.OrderBy(f => f.price))
             {
                 int take = 0;
-                while (take < count && bought < amount && spent + price <= Hero.MainHero.Gold)
+                while (take < count && bought < order.Amount && spent + price <= Hero.MainHero.Gold)
                 {
                     take++;
                     bought++;
@@ -695,28 +771,38 @@ namespace LordOrders
                 {
                     roster.AddToCounts(item, -take);
                     party.ItemRoster.AddToCounts(item, take);
+                    record.Add(item.StringId + ":" + take);
                 }
-                if (bought >= amount)
+                if (bought >= order.Amount)
                     break;
             }
             if (spent > 0)
                 GiveGoldAction.ApplyForCharacterToSettlement(Hero.MainHero, market, spent, false);
+            order.Items = string.Join(",", record);
             return bought;
         }
 
-        private static int MoveFood(ItemRoster from, ItemRoster to, int amount)
+        // Sadece satın alınan yiyecekleri taşır (lordun kendi erzakına dokunmaz). to=null ise kilere gider.
+        // Yolda yenmiş olanlar teslim edilemez.
+        private static int MoveBoughtFood(Order order, ItemRoster from, ItemRoster to, int max)
         {
             int moved = 0;
-            for (int i = from.Count - 1; i >= 0 && moved < amount; i--)
+            foreach (string pair in (order.Items ?? "").Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
             {
-                ItemRosterElement e = from.GetElementCopyAtIndex(i);
-                ItemObject item = e.EquipmentElement.Item;
-                if (item == null || !item.IsFood || e.Amount <= 0)
+                string[] kv = pair.Split(':');
+                if (kv.Length != 2 || !int.TryParse(kv[1], out int n))
                     continue;
-                int take = MathF.Min(e.Amount, amount - moved);
+                ItemObject item = MBObjectManager.Instance.GetObject<ItemObject>(kv[0]);
+                if (item == null)
+                    continue;
+                int take = MathF.Min(MathF.Min(n, from.GetItemNumber(item)), max - moved);
+                if (take <= 0)
+                    continue;
                 from.AddToCounts(item, -take);
-                to.AddToCounts(item, take);
+                to?.AddToCounts(item, take);
                 moved += take;
+                if (moved >= max)
+                    break;
             }
             return moved;
         }
@@ -740,9 +826,9 @@ namespace LordOrders
                 .OrderBy(p => p.Position.Distance(party.Position))
                 .FirstOrDefault();
             if (enemy != null)
-                party.SetMoveEngageParty(enemy, MobileParty.NavigationType.Default);
+                party.SetMoveEngageParty(enemy, Nav(party));
             else
-                party.SetMovePatrolAroundSettlement(s, MobileParty.NavigationType.Default, false);
+                party.SetMovePatrolAroundSettlement(s, Nav(party), false);
         }
 
         private void ExecuteJoin(Order order, MobileParty party)
@@ -753,9 +839,10 @@ namespace LordOrders
                 Finish(order, $"{order.Hero.Name} ordana katıldı.", true);
                 return;
             }
-            if (party.Position.Distance(main.Position) > 3f || main.CurrentSettlement != null)
+            if (party.Position.Distance(main.Position) > 3f || main.CurrentSettlement != null || party.CurrentSettlement != null
+                || party.IsCurrentlyAtSea != main.IsCurrentlyAtSea)
             {
-                party.SetMoveEscortParty(main, MobileParty.NavigationType.Default, false);
+                party.SetMoveEscortParty(main, Nav(party), false);
                 return;
             }
 
@@ -768,8 +855,8 @@ namespace LordOrders
                     Say($"{order.Hero.Name}: bir krallığın olmadan ordu kurulamaz, seni takip edeceğim.", Colors.Yellow);
                     return;
                 }
-                Settlement gather = Settlement.All.Where(st => st.IsFortification)
-                    .OrderBy(st => st.Position.Distance(main.Position)).FirstOrDefault();
+                Settlement gather = Settlement.All.Where(st => st.IsFortification && st.MapFaction == Clan.PlayerClan.MapFaction)
+                    .OrderBy(st => st.Position.Distance(main.Position)).FirstOrDefault() ?? Hero.MainHero.HomeSettlement;
                 kingdom.CreateArmy(Hero.MainHero, gather, Army.ArmyTypes.Patrolling, new MBList<MobileParty>());
             }
             if (main.Army == null || main.Army.LeaderParty != main)

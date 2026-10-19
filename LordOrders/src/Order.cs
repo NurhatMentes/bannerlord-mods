@@ -1,5 +1,6 @@
 using System.Globalization;
 using TaleWorlds.CampaignSystem;
+using TaleWorlds.CampaignSystem.Party;
 using TaleWorlds.CampaignSystem.Settlements;
 
 namespace LordOrders
@@ -20,6 +21,7 @@ namespace LordOrders
     public class Order
     {
         public Hero Hero;
+        public MobileParty Party;     // emri alan parti (lider değişse bile kontrolü buna geri verilir)
         public OrderType Type;
         public Settlement Target;     // yağma/kuşatma/devriye hedefi ya da erzak teslim kalesi
         public Settlement Market;     // erzak alınacak şehir
@@ -29,6 +31,7 @@ namespace LordOrders
         public double StartHours;
         public double DeadlineHours;
         public double ArriveHours;    // haberci: emrin lorda ulaşacağı an
+        public string Items = "";     // erzak: satın alınan yiyecekler "itemId:adet,itemId:adet"
 
         public string Serialize()
         {
@@ -41,7 +44,8 @@ namespace LordOrders
                 Stage.ToString(CultureInfo.InvariantCulture),
                 StartHours.ToString("R", CultureInfo.InvariantCulture),
                 DeadlineHours.ToString("R", CultureInfo.InvariantCulture),
-                ArriveHours.ToString("R", CultureInfo.InvariantCulture));
+                ArriveHours.ToString("R", CultureInfo.InvariantCulture),
+                Items ?? "");
         }
 
         public static Order Deserialize(Hero hero, string data)
@@ -60,6 +64,7 @@ namespace LordOrders
             double.TryParse(f[6], NumberStyles.Float, CultureInfo.InvariantCulture, out o.StartHours);
             double.TryParse(f[7], NumberStyles.Float, CultureInfo.InvariantCulture, out o.DeadlineHours);
             double.TryParse(f[8], NumberStyles.Float, CultureInfo.InvariantCulture, out o.ArriveHours);
+            o.Items = f.Length > 9 ? f[9] : "";
             return o;   // None: haberciyle gönderilen "emri iptal et" mesajı
         }
 
