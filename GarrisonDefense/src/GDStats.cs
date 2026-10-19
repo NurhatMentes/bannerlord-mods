@@ -92,7 +92,7 @@ namespace GarrisonDefense
         private static bool IsPlayerDetachment(MobileParty p)
         {
             return p != null && GarrisonDefenseBehavior.Instance != null
-                   && GarrisonDefenseBehavior.Instance.IsDetachment(p) && p.ActualClan == Clan.PlayerClan;
+                   && GarrisonDefenseBehavior.Instance.WasDetachment(p) && p.ActualClan == Clan.PlayerClan;
         }
 
         // ---------------- Çekirdek davranıştan gelen kayıtlar ----------------
@@ -220,7 +220,10 @@ namespace GarrisonDefense
                 AppendBlock(sb, "ÖNCEKİ 30 GÜN", _previous);
             AppendBlock(sb, "TOPLAM", _total);
 
-            List<MobileParty> active = MobileParty.All.Where(IsPlayerDetachment).ToList();
+            List<MobileParty> active = MobileParty.All
+                .Where(p => p.IsActive && GarrisonDefenseBehavior.Instance != null
+                            && GarrisonDefenseBehavior.Instance.IsDetachment(p) && p.ActualClan == Clan.PlayerClan)
+                .ToList();
             sb.AppendLine($"ŞU AN SAHADA: {active.Count} müfreze, {active.Sum(p => p.MemberRoster.TotalManCount)} asker");
             foreach (MobileParty p in active.Take(8))
                 sb.AppendLine($"  {p.Name}: {p.MemberRoster.TotalHealthyCount} sağlam / {p.MemberRoster.TotalManCount}");

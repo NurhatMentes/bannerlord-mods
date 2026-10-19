@@ -34,6 +34,12 @@ namespace GarrisonDefense
         // Bu parti modun çıkardığı bir garnizon müfrezesi mi? (rapor ve arayüz kullanır)
         public bool IsDetachment(MobileParty party) => party != null && _detachments.Contains(party);
 
+        // Bu oturumda çıkmış (şimdi yok olmuş olabilir) bir müfreze mi? Savaşta yok olan müfrezenin
+        // savaşı da rapora girsin diye kullanılır.
+        public bool WasDetachment(MobileParty party) => party != null && (_everSpawned.Contains(party) || IsDetachment(party));
+
+        private readonly HashSet<MobileParty> _everSpawned = new HashSet<MobileParty>();
+
         private List<MobileParty> _detachments = new List<MobileParty>();
 
         // Kaydedilmez; yüklemeden sonra her saat başı yeniden hesaplanır.
@@ -301,6 +307,7 @@ namespace GarrisonDefense
             detachment.ItemRoster.AddToCounts(DefaultItems.Grain, food);
             detachment.Ai.SetDoNotMakeNewDecisions(true);
             _detachments.Add(detachment);
+            _everSpawned.Add(detachment);
             return detachment;
         }
 
