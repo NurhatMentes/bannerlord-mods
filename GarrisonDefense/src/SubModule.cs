@@ -10,7 +10,17 @@ namespace GarrisonDefense
         {
             base.OnGameStart(game, gameStarterObject);
             if (game.GameType is Campaign && gameStarterObject is CampaignGameStarter starter)
+            {
+                GDSettings.Reset();
+                starter.AddBehavior(new GDStatsBehavior());
                 starter.AddBehavior(new GarrisonDefenseBehavior());
+            }
+        }
+
+        protected override void OnApplicationTick(float dt)
+        {
+            base.OnApplicationTick(dt);
+            GDSettingsUI.Tick();
         }
     }
 }

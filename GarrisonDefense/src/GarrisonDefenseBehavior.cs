@@ -30,6 +30,13 @@ namespace GarrisonDefense
         private const float MaxChaseHours = 36f;       // bu süreden uzun kovalamaz
         private const int MinDetachmentSize = 5;
 
+        public static GarrisonDefenseBehavior Instance { get; private set; }
+
+        public GarrisonDefenseBehavior() { Instance = this; }
+
+        // Bu parti modun çıkardığı bir garnizon müfrezesi mi? (rapor ve arayüz kullanır)
+        public bool IsDetachment(MobileParty party) => party != null && _detachments.Contains(party);
+
         private List<MobileParty> _detachments = new List<MobileParty>();
 
         // Kaydedilmez; yüklemeden sonra her saat başı yeniden hesaplanır.
