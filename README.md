@@ -19,7 +19,3 @@ Ayrıntılar: [`GarrisonDefense/README.md`](GarrisonDefense/README.md), [`Garris
 
 `dist/Modules/<Mod>` klasörünü oyunun `Modules` klasörüne kopyala. DLL hem `Win64_Shipping_Client` (Steam)
 hem `Gaming.Desktop.x64_Shipping_Client` (Xbox) klasörüne konur.
-
-## Notlar
-- Xbox launcher, Garrison Defense ve Lord Orders ayrı modüllerken çöküyordu; bu yüzden Lord Orders aynı modülün içinde.
-- Oyun API'si [REA](https://github.com/morluto/rea) ile referans DLL'ler üzerinden incelendi.
