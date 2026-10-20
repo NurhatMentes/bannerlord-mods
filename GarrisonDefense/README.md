@@ -1,4 +1,6 @@
-# Garrison Defense v2 — Bannerlord modu (v1.4.8 / Xbox ve Steam)
+# Garrison Defense v2.2 — Bannerlord modu (v1.4.8 / Xbox ve Steam)
+
+Lord Orders (lordlara emir verme) bu modun içindedir; ayrıntılar: README_LordOrders.md.
 
 Şehir ve kale garnizonları bağlı köyleri ve çevreyi düşman lordlarına, devriyelere ve haydutlara karşı korur.
 Ek mod gerektirmez.
@@ -21,6 +23,7 @@ Ek mod gerektirmez.
 
 ## Kurulum
 `dist/Modules/GarrisonDefense` klasörünü oyunun `Modules` klasörüne kopyala (eskisini sil), launcher'da işaretle.
+Ayrı `LordOrders` klasörü varsa **sil** (Xbox launcher'ı iki modu yan yana yüklerken çöküyordu).
 
 ## Derleme
     cd src && dotnet build -c Release

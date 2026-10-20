@@ -1,4 +1,4 @@
-# Lord Orders — Bannerlord modu (v1.4.8 / Xbox ve Steam)
+# Lord Orders — Garrison Defense modunun parçası
 
 Lordlarına emir ver: köy yağmala, kale kuşat, erzak getir, bölgeyi koru, orduma katıl, beni takip et.
 
@@ -32,4 +32,4 @@ Süre dolunca ya da iş bitince lord kendi işine döner ve sana mesaj gelir.
 yoksa emir almış partiler kayıtta kilitli kalabilir.
 
 ## Kurulum
-`dist/Modules/LordOrders` klasörünü oyunun `Modules` klasörüne kopyala, launcher'da işaretle.
+Garrison Defense ile birlikte gelir; ayrı kurulum yok.

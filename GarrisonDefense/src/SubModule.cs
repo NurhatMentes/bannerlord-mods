@@ -14,6 +14,8 @@ namespace GarrisonDefense
                 GDSettings.Reset();
                 starter.AddBehavior(new GDStatsBehavior());
                 starter.AddBehavior(new GarrisonDefenseBehavior());
+                // Lord Orders aynı modülün içinde: launcher iki ayrı modülü yan yana yüklerken çöküyordu.
+                starter.AddBehavior(new LordOrders.LordOrdersBehavior());
             }
         }
 
@@ -21,6 +23,7 @@ namespace GarrisonDefense
         {
             base.OnApplicationTick(dt);
             GDSettingsUI.Tick();
+            LordOrders.LordOrdersBehavior.Instance?.Tick();
         }
     }
 }
