@@ -122,10 +122,25 @@ namespace LordOrders
             else if (!IsClanMember(h) && !IsVassal(h))
                 reason = "Sadece klanının üyelerine ve (hükümdarsan) vasallarına emir verebilirsin.";
             else if (LeadParty(h) == null)
-                reason = h.Name + " bir partiye komuta etmiyor.";
+                reason = h.Name + " kendi partisine komuta etmiyor (şu an senin partinde olabilir). "
+                         + "Klan ekranında (L) Partiler sekmesinden ona yeni bir parti kur.";
             else if (LeadParty(h).Army != null && LeadParty(h).Army.LeaderParty != LeadParty(h))
                 reason = h.Name + " başka birinin ordusunda.";
             return reason == null;
+        }
+
+        // Lordun ağzından, neden emir alamadığı.
+        private static string CannotReasonFirstPerson(Hero h)
+        {
+            MobileParty p = LeadParty(h);
+            if (h == null || h.IsPrisoner)
+                return "Şu an emir alacak durumda değilim.";
+            if (p == null)
+                return "Emrine hazırım, ama komuta ettiğim bir parti yok; şu an seninle birlikteyim. "
+                       + "Klan ekranından bana bir parti kurarsan istediğin her yere giderim.";
+            if (p.Army != null && p.Army.LeaderParty != p)
+                return "Şu an başka birinin ordusundayım, oradan ayrılamam.";
+            return "Şu an buna uyamam.";
         }
 
         private Order OrderOf(Hero h) => _orders.FirstOrDefault(o => o.Hero == h);
@@ -144,11 +159,21 @@ namespace LordOrders
 
         private void OnSessionLaunched(CampaignGameStarter starter)
         {
+            // Seçenek klan üyelerine ve vasallara her zaman görünür; emir alamıyorsa lord nedenini söyler.
             starter.AddPlayerLine("lo_start", "hero_main_options", "lo_ask",
                 "{=lo_start}Sana bir emrim var.",
-                () => CanCommand(Hero.OneToOneConversationHero, out _), null, 105, null, null);
+                () => IsClanMember(Hero.OneToOneConversationHero) || IsVassal(Hero.OneToOneConversationHero),
+                null, 105, null, null);
             starter.AddDialogLine("lo_ask_resp", "lo_ask", "lo_menu",
-                "{=lo_listen}Dinliyorum.", null, null, 100, null);
+                "{=lo_listen}Dinliyorum.",
+                () => CanCommand(Hero.OneToOneConversationHero, out _), null, 100, null);
+            starter.AddDialogLine("lo_ask_cannot", "lo_ask", "lord_pretalk",
+                "{=lo_cannot}{LO_CANNOT_REASON}",
+                () =>
+                {
+                    MBTextManager.SetTextVariable("LO_CANNOT_REASON", CannotReasonFirstPerson(Hero.OneToOneConversationHero));
+                    return !CanCommand(Hero.OneToOneConversationHero, out _);
+                }, null, 100, null);
 
             AddOrderLine(starter, "lo_o_raid", "{=lo_o_raid}Düşmanın bir köyünü yağmalamanı istiyorum.", OrderType.Raid,
                 () => RaidTargets(Hero.OneToOneConversationHero).Any());
@@ -375,7 +400,12 @@ namespace LordOrders
                 .ToList();
             if (lords.Count == 0)
             {
-                InformationManager.DisplayMessage(new InformationMessage("Emir verebileceğin, parti komuta eden bir lord yok.", Colors.Red));
+                int companionsWithYou = Clan.PlayerClan.Heroes.Count(h => h != Hero.MainHero && h.IsAlive && !h.IsChild
+                                                                         && h.PartyBelongedTo == MobileParty.MainParty);
+                string hint = companionsWithYou > 0
+                    ? $" {companionsWithYou} klan üyen senin partinde. Klan ekranında (L) Partiler sekmesinden onlara kendi partilerini kurabilirsin."
+                    : "";
+                InformationManager.DisplayMessage(new InformationMessage("Emir verebileceğin, kendi partisine komuta eden bir lord yok." + hint, Colors.Red));
                 return;
             }
             Pick("Haberci gönder", "Haberci kime gitsin? (" + MessengerGoldCost + " dinar, mesafeye göre gecikmeli ulaşır)", lords,
