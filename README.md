@@ -1,30 +1,25 @@
-# InnRest — Bannerlord modu
+# Bannerlord Mods
 
-Şehir menüsüne **"Rest at the inn"** seçeneği ekler:
+Mount & Blade II: Bannerlord (v1.4.8, Steam ve Xbox Game Pass) için modlar.
+Ek mod gerektirmez (MCM/Harmony yok).
 
-- Ücret: 100 + parti başına asker × 5 altın
-- Yaralı askerlerin hepsi iyileşir, partideki kahramanların canı dolar
-- Parti moraline +15
-- 7 günde bir kullanılabilir (kayıt dosyasına yazılır)
+| Mod | Klasör | Ne yapar |
+|---|---|---|
+| **Garrison Defense** (+ Lord Orders) | `GarrisonDefense/` | Garnizonlar bağlı köyleri ve çevreyi korur, kuşatılan kalelere ortak yardım gönderir; ayar ve rapor ekranı. Lordlarına diyalog ya da haberciyle emir verirsin (yağma, kuşatma, erzak, devriye, katıl, takip). |
+| **Inn Rest** (örnek) | `src/`, `_Module/` | Şehir menüsünde "hanında dinlen": altınla yaralıları iyileştirir, moral verir. |
 
-Ayarlar `src/InnRestBehavior.cs` dosyasının başındaki sabitlerde.
+Ayrıntılar: [`GarrisonDefense/README.md`](GarrisonDefense/README.md), [`GarrisonDefense/README_LordOrders.md`](GarrisonDefense/README_LordOrders.md).
 
-## Kurulum (oyuncu)
-`dist/Modules/InnRest` klasörünü `...\Mount & Blade II Bannerlord\Modules\` içine kopyala,
-launcher'da **Inn Rest** modunu işaretle.
+## Derleme
+.NET SDK 8 yeterli; oyun kurulu olmasa da derlenir (referanslar NuGet'teki `Bannerlord.ReferenceAssemblies` paketinden gelir).
 
-## Derleme (geliştirici)
-.NET SDK 8 gerekli. Oyun kurulu olmasa da derlenir (BUTR referans DLL'leri NuGet'ten gelir).
-
-    cd src
+    cd GarrisonDefense/src
     dotnet build -c Release
-    # oyuna otomatik kopyalamak için:
-    dotnet build -c Release -p:GameFolder="C:\Program Files (x86)\Steam\steamapps\common\Mount & Blade II Bannerlord"
+    # çıktı: GarrisonDefense/dist/Modules/GarrisonDefense
 
-Hedef oyun sürümü: v1.2.x / 1.4.8 referans paketi. Farklı bir oyun sürümündeysen
-`InnRest.csproj` içindeki `Bannerlord.ReferenceAssemblies` sürümünü değiştir.
+`dist/Modules/<Mod>` klasörünü oyunun `Modules` klasörüne kopyala. DLL hem `Win64_Shipping_Client` (Steam)
+hem `Gaming.Desktop.x64_Shipping_Client` (Xbox) klasörüne konur.
 
-## REA ile API keşfi
-Yeni özellik eklerken oyunun DLL'lerinde neyin olduğunu görmek için:
-
-    rea inspect-managed-members "<oyun>\bin\Win64_Shipping_Client\TaleWorlds.CampaignSystem.dll" --type TaleWorlds.CampaignSystem.Party.MobileParty --format json
+## Notlar
+- Xbox launcher, Garrison Defense ve Lord Orders ayrı modüllerken çöküyordu; bu yüzden Lord Orders aynı modülün içinde.
+- Oyun API'si [REA](https://github.com/morluto/rea) ile referans DLL'ler üzerinden incelendi.
