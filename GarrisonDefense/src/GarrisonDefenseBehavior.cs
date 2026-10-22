@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Linq;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Actions;
+using TaleWorlds.CampaignSystem.Encounters;
 using TaleWorlds.CampaignSystem.Party;
 using TaleWorlds.CampaignSystem.Party.PartyComponents;
 using TaleWorlds.CampaignSystem.Roster;
@@ -109,8 +110,70 @@ namespace GarrisonDefense
         private void OnSessionLaunched(CampaignGameStarter starter)
         {
             GDSettingsUI.RegisterMenus(starter);
+            AddDetachmentDialogs(starter);
             foreach (MobileParty d in _detachments)
+            {
                 _everSpawned.Add(d);
+                EnsureOwnership(d);   // eski sürümde sahipsiz oluşturulmuş müfrezeleri düzelt
+            }
+        }
+
+        // Kendi müfrezenle konuşma: başında kahraman olmayan partiler için oyunun hazır diyaloğu yok
+        // ("konuşmam yasak" diyordu). Müfreze durumunu bildirir, istenirse kaleye döner.
+        private bool IsOwnDetachment(MobileParty p) => p != null && IsDetachment(p) && p.ActualClan == Clan.PlayerClan;
+
+        private void AddDetachmentDialogs(CampaignGameStarter starter)
+        {
+            starter.AddDialogLine("gd_det_greet", "start", "gd_det_opts", "{=gd_det_greet}{GD_DET_TEXT}",
+                () =>
+                {
+                    MobileParty p = MobileParty.ConversationParty;
+                    if (!IsOwnDetachment(p))
+                        return false;
+                    TextObject text;
+                    if (_reliefTarget.TryGetValue(p, out Settlement besieged))
+                        text = new TextObject("{=gd_det_relief}Efendim! {SETTLEMENT} kuşatmasını kırmaya gidiyoruz. {COUNT} sağlam askerimiz var.")
+                            .SetTextVariable("SETTLEMENT", besieged.Name);
+                    else if (_targets.TryGetValue(p, out MobileParty target) && target != null)
+                        text = new TextObject("{=gd_det_chase}Efendim! {ENEMY} peşindeyiz. {COUNT} sağlam askerimiz var.")
+                            .SetTextVariable("ENEMY", target.Name);
+                    else
+                        text = new TextObject("{=gd_det_home}Efendim! {SETTLEMENT} garnizonuna dönüyoruz. {COUNT} sağlam askerimiz var.")
+                            .SetTextVariable("SETTLEMENT", p.HomeSettlement?.Name ?? new TextObject("kale"));
+                    text.SetTextVariable("COUNT", p.MemberRoster.TotalHealthyCount);
+                    MBTextManager.SetTextVariable("GD_DET_TEXT", text);
+                    return true;
+                }, null, 200, null);
+
+            starter.AddPlayerLine("gd_det_return", "gd_det_opts", "gd_det_ack", "{=gd_det_return}Görevi bırakın, garnizona dönün.",
+                () => !_returning.Contains(MobileParty.ConversationParty),
+                () => StartReturn(MobileParty.ConversationParty), 100, null, null);
+            starter.AddPlayerLine("gd_det_continue", "gd_det_opts", "gd_det_ack", "{=gd_det_continue}Göreve devam edin.",
+                null, null, 100, null, null);
+            starter.AddDialogLine("gd_det_ack", "gd_det_ack", "close_window", "{=gd_det_ack}Emredersiniz!", null,
+                () =>
+                {
+                    if (PlayerEncounter.Current != null)
+                        PlayerEncounter.LeaveEncounter = true;
+                }, 100, null);
+        }
+
+        // CreateCustomPartyWithTroopRoster'a verilen kahraman bu sürümde partinin sahibi olarak kaydedilmiyor.
+        // Sahipsiz parti krallık bayrağını alıyor, oyun onu oyuncunun partisi saymıyor (konuşmuyor,
+        // saldırılabiliyor). Sahip ve bayrak açıkça klana bağlanır.
+        private static void EnsureOwnership(MobileParty detachment)
+        {
+            if (detachment == null || !detachment.IsActive)
+                return;
+            Clan clan = detachment.ActualClan ?? detachment.HomeSettlement?.OwnerClan;
+            if (clan == null)
+                return;
+            if (detachment.ActualClan != clan)
+                detachment.ActualClan = clan;
+            if (clan.Leader != null && detachment.Party.Owner != clan.Leader)
+                detachment.Party.SetCustomOwner(clan.Leader);
+            if (clan.Banner != null)
+                detachment.Party.SetCustomBanner(clan.Banner);
         }
 
         private void OnPartyDestroyed(MobileParty party, PartyBase destroyer)
@@ -346,6 +409,9 @@ namespace GarrisonDefense
                 home.GatePosition, 0.5f, home, name, home.OwnerClan,
                 roster, TroopRoster.CreateDummyTroopRoster(), home.OwnerClan.Leader,
                 "", "", 0f, false);
+
+            detachment.ActualClan = home.OwnerClan;
+            EnsureOwnership(detachment);
 
             int food = MathF.Max(5, roster.TotalManCount / 5);
             detachment.ItemRoster.AddToCounts(DefaultItems.Grain, food);

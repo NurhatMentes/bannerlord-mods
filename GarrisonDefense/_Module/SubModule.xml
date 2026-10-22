@@ -2,7 +2,7 @@
 <Module>
   <Name value="Garrison Defense" />
   <Id value="GarrisonDefense" />
-  <Version value="v2.2.1" />
+  <Version value="v2.2.2" />
   <SingleplayerModule value="true" />
   <MultiplayerModule value="false" />
   <DependedModules>
