@@ -143,16 +143,35 @@ namespace LordOrders
             return "Şu an buna uyamam.";
         }
 
+        // Liste neden boş: oyuncuya ne yapması gerektiğini söyler.
+        private static string NoLordReason()
+        {
+            var parts = new List<string>();
+            int withYou = Clan.PlayerClan.Heroes.Count(h => h != Hero.MainHero && h.IsAlive && !h.IsChild
+                                                          && h.PartyBelongedTo == MobileParty.MainParty);
+            if (withYou > 0)
+                parts.Add($"{withYou} klan üyen senin partinde; klan ekranında (L) Partiler sekmesinden onlara kendi partilerini kurabilirsin.");
+            else
+                parts.Add("Klanında kendi partisine komuta eden kimse yok; klan ekranından (L) bir yoldaşına parti kurabilirsin.");
+            Kingdom k = Clan.PlayerClan.Kingdom;
+            if (k == null)
+                parts.Add("Bir krallığa bağlı değilsin, bu yüzden başka lordlara emir veremezsin.");
+            else if (k.RulingClan != Clan.PlayerClan)
+                parts.Add($"{k.Name} krallığının hükümdarı sen değilsin ({k.Leader?.Name}); diğer lordlara sadece hükümdarken emir verebilirsin.");
+            return string.Join(" ", parts);
+        }
+
         private Order OrderOf(Hero h) => _orders.FirstOrDefault(o => o.Hero == h);
 
         private static IEnumerable<Hero> CommandableHeroes()
         {
-            var clanParties = Clan.PlayerClan.WarPartyComponents.Select(c => c.MobileParty?.LeaderHero);
-            Kingdom k = Clan.PlayerClan.Kingdom;
-            var vassalParties = k != null && k.RulingClan == Clan.PlayerClan
-                ? k.Clans.Where(c => c != Clan.PlayerClan).SelectMany(c => c.WarPartyComponents).Select(c => c.MobileParty?.LeaderHero)
-                : Enumerable.Empty<Hero>();
-            return clanParties.Concat(vassalParties).Where(h => h != null && CanCommand(h, out _)).Distinct();
+            // Klanın "savaş partileri" listesine güvenmek yerine haritadaki tüm partilere bakılır:
+            // bu sürümde bazı klan partileri o listede görünmeyebiliyor.
+            return MobileParty.All
+                .Where(p => p.IsActive && !p.IsMainParty && p.LeaderHero != null)
+                .Select(p => p.LeaderHero)
+                .Where(h => CanCommand(h, out _))
+                .Distinct();
         }
 
         // ---------------- Diyalog ----------------
@@ -400,12 +419,8 @@ namespace LordOrders
                 .ToList();
             if (lords.Count == 0)
             {
-                int companionsWithYou = Clan.PlayerClan.Heroes.Count(h => h != Hero.MainHero && h.IsAlive && !h.IsChild
-                                                                         && h.PartyBelongedTo == MobileParty.MainParty);
-                string hint = companionsWithYou > 0
-                    ? $" {companionsWithYou} klan üyen senin partinde. Klan ekranında (L) Partiler sekmesinden onlara kendi partilerini kurabilirsin."
-                    : "";
-                InformationManager.DisplayMessage(new InformationMessage("Emir verebileceğin, kendi partisine komuta eden bir lord yok." + hint, Colors.Red));
+                InformationManager.DisplayMessage(new InformationMessage(
+                    "Emir verebileceğin, kendi partisine komuta eden bir lord yok. " + NoLordReason(), Colors.Red));
                 return;
             }
             Pick("Haberci gönder", "Haberci kime gitsin? (" + MessengerGoldCost + " dinar, mesafeye göre gecikmeli ulaşır)", lords,
