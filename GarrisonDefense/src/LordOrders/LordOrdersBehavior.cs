@@ -20,7 +20,8 @@ namespace LordOrders
     // ilişkiye göre kabul eder ve nüfuz harcatır. Emir yüz yüze diyalogla ya da haberciyle verilir.
     public class LordOrdersBehavior : CampaignBehaviorBase
     {
-        private const float VassalInfluenceCost = 10f;
+        private const float VassalInfluenceCost = 10f;   // hükümdarken vasala emir
+        private const float PeerInfluenceCost = 25f;     // vasalken krallıktaki başka bir lorda emir (rica)
         private const int MessengerGoldCost = 50;
         private const float MessengerSpeed = 12f;      // harita birimi / saat
         private const float RaidDays = 5f, BesiegeDays = 15f, FoodDays = 10f, PatrolDays = 10f, FollowDays = 10f, JoinDays = 5f;
@@ -105,6 +106,18 @@ namespace LordOrders
                    && h.Clan != null && h.Clan != Clan.PlayerClan && h.Clan.Kingdom == k;
         }
 
+        // Oyuncu hükümdar değilken aynı krallıktaki başka klanların lordları. Hükümdarın klanı hariç:
+        // kral, vasalından emir almaz.
+        private static bool IsPeer(Hero h)
+        {
+            Kingdom k = Clan.PlayerClan.Kingdom;
+            return h != null && k != null && k.RulingClan != Clan.PlayerClan
+                   && h.Clan != null && h.Clan != Clan.PlayerClan && h.Clan != k.RulingClan && h.Clan.Kingdom == k;
+        }
+
+        // Klan dışından (kabul/ret ve nüfuz gerektiren) emir alabilecek biri mi?
+        private static bool IsOutsideClan(Hero h) => IsVassal(h) || IsPeer(h);
+
         private static MobileParty LeadParty(Hero h)
         {
             MobileParty p = h?.PartyBelongedTo;
@@ -119,8 +132,8 @@ namespace LordOrders
             reason = null;
             if (h == null || !h.IsAlive || h.IsPrisoner)
                 reason = "Bu kişi emir alamaz.";
-            else if (!IsClanMember(h) && !IsVassal(h))
-                reason = "Sadece klanının üyelerine ve (hükümdarsan) vasallarına emir verebilirsin.";
+            else if (!IsClanMember(h) && !IsOutsideClan(h))
+                reason = "Sadece klanının üyelerine ve krallığındaki lordlara (hükümdarın klanı hariç) emir verebilirsin.";
             else if (LeadParty(h) == null)
                 reason = h.Name + " kendi partisine komuta etmiyor (şu an senin partinde olabilir). "
                          + "Klan ekranında (L) Partiler sekmesinden ona yeni bir parti kur.";
@@ -143,6 +156,13 @@ namespace LordOrders
             return "Şu an buna uyamam.";
         }
 
+        // Hükümdar değilken eşit konumdaki bir lordun "ricayı" kabul şansı: ilişki ve klan kademesi farkına bağlı.
+        private static float PeerAcceptChance(Hero hero)
+        {
+            int tierDiff = Clan.PlayerClan.Tier - (hero.Clan?.Tier ?? 0);
+            return MathF.Clamp(0.25f + hero.GetRelationWithPlayer() * 0.006f + tierDiff * 0.05f, 0.05f, 0.80f);
+        }
+
         // Liste neden boş: oyuncuya ne yapması gerektiğini söyler.
         private static string NoLordReason()
         {
@@ -156,8 +176,8 @@ namespace LordOrders
             Kingdom k = Clan.PlayerClan.Kingdom;
             if (k == null)
                 parts.Add("Bir krallığa bağlı değilsin, bu yüzden başka lordlara emir veremezsin.");
-            else if (k.RulingClan != Clan.PlayerClan)
-                parts.Add($"{k.Name} krallığının hükümdarı sen değilsin ({k.Leader?.Name}); diğer lordlara sadece hükümdarken emir verebilirsin.");
+            else
+                parts.Add($"{k.Name} krallığında şu an kendi partisine komuta eden, emir verebileceğin bir lord da yok.");
             return string.Join(" ", parts);
         }
 
@@ -181,7 +201,7 @@ namespace LordOrders
             // Seçenek klan üyelerine ve vasallara her zaman görünür; emir alamıyorsa lord nedenini söyler.
             starter.AddPlayerLine("lo_start", "hero_main_options", "lo_ask",
                 "{=lo_start}Sana bir emrim var.",
-                () => IsClanMember(Hero.OneToOneConversationHero) || IsVassal(Hero.OneToOneConversationHero),
+                () => IsClanMember(Hero.OneToOneConversationHero) || IsOutsideClan(Hero.OneToOneConversationHero),
                 null, 105, null, null);
             starter.AddDialogLine("lo_ask_resp", "lo_ask", "lo_menu",
                 "{=lo_listen}Dinliyorum.",
@@ -413,7 +433,7 @@ namespace LordOrders
                 .Select(h =>
                 {
                     Order cur = OrderOf(h);
-                    string tag = IsClanMember(h) ? "klan" : "vasal";
+                    string tag = IsClanMember(h) ? "klan" : IsVassal(h) ? "vasal" : "krallık";
                     return Element(h, $"{h.Name} ({tag}, {LeadParty(h).MemberRoster.TotalManCount} asker) — emir: {cur?.Describe() ?? "yok"}");
                 })
                 .ToList();
@@ -487,26 +507,28 @@ namespace LordOrders
                 return;
             }
 
-            if (IsVassal(hero))
+            if (IsOutsideClan(hero))
             {
+                bool peer = IsPeer(hero);
+                float cost = peer ? PeerInfluenceCost : VassalInfluenceCost;
                 if (_refusedUntil.TryGetValue(hero, out CampaignTime until) && CampaignTime.Now < until)
                 {
                     Say($"{hero.Name} kısa süre önce emrini reddetti; tekrar sormak için {MathF.Ceiling(until.RemainingHoursFromNow)} saat bekle.", Colors.Red);
                     return;
                 }
-                if (Clan.PlayerClan.Influence < VassalInfluenceCost)
+                if (Clan.PlayerClan.Influence < cost)
                 {
-                    Say($"{hero.Name} emrine uymadı: bir vasala emir vermek {VassalInfluenceCost:0} nüfuz gerektirir.", Colors.Red);
+                    Say($"{hero.Name} emrine uymadı: {(peer ? "krallıktaki bir lordu ikna etmek" : "bir vasala emir vermek")} {cost:0} nüfuz gerektirir.", Colors.Red);
                     return;
                 }
-                float chance = MathF.Clamp(0.55f + hero.GetRelationWithPlayer() * 0.006f, 0.15f, 0.95f);
+                float chance = peer ? PeerAcceptChance(hero) : MathF.Clamp(0.55f + hero.GetRelationWithPlayer() * 0.006f, 0.15f, 0.95f);
                 if (MBRandom.RandomFloat > chance)
                 {
                     _refusedUntil[hero] = CampaignTime.HoursFromNow(RefuseCooldownHours);
                     Say($"{hero.Name} emrini reddetti. (Kabul şansı ~%{MathF.Round(chance * 100)}; ilişkiniz arttıkça yükselir.)", Colors.Red);
                     return;
                 }
-                ChangeClanInfluenceAction.Apply(Clan.PlayerClan, -VassalInfluenceCost);
+                ChangeClanInfluenceAction.Apply(Clan.PlayerClan, -cost);
             }
 
             if (current != null)
@@ -602,7 +624,7 @@ namespace LordOrders
                 Finish(order, $"{hero?.Name} emrini yerine getiremiyor (partisi yok, esir ya da başka bir orduda).", false);
                 return;
             }
-            if (!IsClanMember(hero) && !IsVassal(hero))
+            if (!IsClanMember(hero) && !IsOutsideClan(hero))
             {
                 Finish(order, $"{hero.Name} artık emrinde değil.", false);
                 return;

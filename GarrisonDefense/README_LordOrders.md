@@ -6,6 +6,8 @@ Lordlarına emir ver: köy yağmala, kale kuşat, erzak getir, bölgeyi koru, or
 - **Klanındaki parti liderleri** (yoldaşlar, aile): her zaman uyar.
 - **Vasalların** (sen krallığın hükümdarıysan): ilişkinize göre kabul eder ya da reddeder
   (kabul şansı ~%15–95). Kabul edilen her emir **10 nüfuz** harcar.
+- **Krallığındaki diğer lordlar** (sen hükümdar değilken; hükümdarın klanı hariç): emir değil rica sayılır.
+  Kabul şansı daha düşüktür (~%5–80; ilişki ve klan kademen yüksekse artar), kabul edilen her emir **25 nüfuz** harcar.
 
 ## Nasıl?
 - **Yüz yüze:** Lordla konuş → "Sana bir emrim var." → emri seç → konuşma kapanınca hedefi listeden seç.
